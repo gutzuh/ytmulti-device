@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YT Multi-Device</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ── Registration overlay ──────────────────────────────────────────── -->
+  <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+    <div class="overlay-card">
+      <div class="logo">
+        <span class="logo-icon">▶</span>
+        <span class="logo-text">YT Multi-Device</span>
+      </div>
+      <h2 id="overlay-title">Connect your device</h2>
+      <label for="device-name">Device name</label>
+      <input id="device-name" type="text" placeholder="e.g. Living Room TV" maxlength="40" />
+      <label for="device-type">Device type</label>
+      <select id="device-type">
+        <option value="browser">Browser</option>
+        <option value="mobile">Mobile</option>
+        <option value="desktop">Desktop</option>
+        <option value="tv">TV</option>
+        <option value="other">Other</option>
+      </select>
+      <button id="connect-btn" class="btn-primary">Connect</button>
+    </div>
+  </div>
+
+  <!-- ── Main app ───────────────────────────────────────────────────────── -->
+  <div id="app" class="app hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo-icon small">▶</span>
+        <span class="logo-text small">YT Multi-Device</span>
+      </div>
+
+      <!-- This Device -->
+      <section class="sidebar-section">
+        <h3 class="section-title">This Device</h3>
+        <div id="this-device" class="this-device-card"></div>
+      </section>
+
+      <!-- Connected Devices -->
+      <section class="sidebar-section">
+        <h3 class="section-title">Connected Devices</h3>
+        <ul id="device-list" class="device-list" aria-label="Connected devices"></ul>
+      </section>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+
+      <!-- Now Playing -->
+      <section class="now-playing-section">
+        <h2 class="section-heading">Now Playing</h2>
+        <div class="now-playing-card" id="now-playing">
+          <div class="track-art-wrapper">
+            <img id="track-art" src="placeholder.svg" alt="Album art" class="track-art" />
+          </div>
+          <div class="track-meta">
+            <div id="track-title" class="track-title">Nothing playing</div>
+            <div id="track-artist" class="track-artist">—</div>
+            <div id="active-device-label" class="active-device-label"></div>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="progress-row">
+          <span id="current-time" class="time-label">0:00</span>
+          <input id="seek-bar" type="range" class="seek-bar" min="0" max="100" value="0" step="1" aria-label="Seek" />
+          <span id="duration" class="time-label">0:00</span>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-row">
+          <button id="btn-prev" class="ctrl-btn" aria-label="Previous" title="Previous">⏮</button>
+          <button id="btn-play-pause" class="ctrl-btn play" aria-label="Play/Pause" title="Play / Pause">▶</button>
+          <button id="btn-next" class="ctrl-btn" aria-label="Next" title="Next">⏭</button>
+          <div class="volume-row">
+            <span class="volume-icon">🔊</span>
+            <input id="volume-bar" type="range" class="volume-bar" min="0" max="100" value="100" aria-label="Volume" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Jam Session -->
+      <section class="jam-section">
+        <h2 class="section-heading">Jam Sessions
+          <span class="badge" id="jam-badge" style="display:none"></span>
+        </h2>
+
+        <!-- Not in jam -->
+        <div id="jam-idle" class="jam-idle">
+          <p class="jam-description">
+            Start a jam to sync playback across multiple devices in real time.
+            Share the code with friends and everyone hears the same thing.
+          </p>
+          <div class="jam-actions">
+            <button id="create-jam-btn" class="btn-primary">Create Jam</button>
+            <div class="join-row">
+              <input id="join-code" type="text" placeholder="Enter jam code" maxlength="6" class="code-input" />
+              <button id="join-jam-btn" class="btn-secondary">Join</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- In jam -->
+        <div id="jam-active" class="jam-active hidden">
+          <div class="jam-header-row">
+            <div>
+              <div id="jam-name" class="jam-name"></div>
+              <div class="jam-code-row">
+                Code: <span id="jam-code-display" class="jam-code"></span>
+                <button id="copy-code-btn" class="btn-icon" aria-label="Copy code" title="Copy code">📋</button>
+              </div>
+            </div>
+            <button id="leave-jam-btn" class="btn-danger">Leave Jam</button>
+          </div>
+          <ul id="jam-device-list" class="jam-device-list" aria-label="Jam participants"></ul>
+          <div id="jam-controls" class="jam-controls hidden">
+            <p class="jam-host-label">You are the host — controls affect all participants.</p>
+            <div class="controls-row">
+              <button id="jam-btn-prev" class="ctrl-btn" aria-label="Previous">⏮</button>
+              <button id="jam-btn-play-pause" class="ctrl-btn play" aria-label="Play/Pause">▶</button>
+              <button id="jam-btn-next" class="ctrl-btn" aria-label="Next">⏭</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
