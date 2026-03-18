@@ -1,144 +1,345 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YT Multi-Device</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>YT Together</title>
+  <meta name="description" content="Ouça músicas juntos em tempo real — YouTube Music style." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- ── Registration overlay ──────────────────────────────────────────── -->
-  <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
-    <div class="overlay-card">
-      <div class="logo">
-        <span class="logo-icon">▶</span>
-        <span class="logo-text">YT Multi-Device</span>
+
+<!-- ═══════════════════════════════════════════════════════════ CONNECT SCREEN -->
+<div id="screen-connect" class="screen screen-connect active">
+  <div class="connect-bg"></div>
+  <div class="connect-card">
+    <div class="connect-logo">
+      <div class="yt-icon">
+        <svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="#FF0000"/><polygon points="14,10 28,18 14,26" fill="white"/></svg>
       </div>
-      <h2 id="overlay-title">Connect your device</h2>
-      <label for="device-name">Device name</label>
-      <input id="device-name" type="text" placeholder="e.g. Living Room TV" maxlength="40" />
-      <label for="device-type">Device type</label>
-      <select id="device-type">
-        <option value="browser">Browser</option>
-        <option value="mobile">Mobile</option>
-        <option value="desktop">Desktop</option>
-        <option value="tv">TV</option>
-        <option value="other">Other</option>
-      </select>
-      <button id="connect-btn" class="btn-primary">Connect</button>
+      <div>
+        <div class="connect-app-name">YT Together</div>
+        <div class="connect-app-sub">Música em tempo real</div>
+      </div>
     </div>
+    <h1 class="connect-title">Entrar na sala</h1>
+    <p class="connect-desc">Todos na sala ouvem e controlam juntos.</p>
+    <div class="field">
+      <label for="inp-name">Seu nome</label>
+      <input id="inp-name" type="text" placeholder="Ex: João" maxlength="30" autocomplete="off" autocorrect="off" />
+    </div>
+    <div class="field">
+      <label for="inp-type">Dispositivo</label>
+      <select id="inp-type">
+        <option value="mobile">📱 Celular</option>
+        <option value="browser">💻 Navegador</option>
+        <option value="desktop">🖥️ Desktop</option>
+        <option value="tv">📺 TV</option>
+      </select>
+    </div>
+    <button id="btn-connect" class="btn-primary-lg">Entrar →</button>
   </div>
+</div>
 
-  <!-- ── Main app ───────────────────────────────────────────────────────── -->
-  <div id="app" class="app hidden">
+<!-- ═══════════════════════════════════════════════════════════════════ APP -->
+<div id="app" class="app hidden">
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <span class="logo-icon small">▶</span>
-        <span class="logo-text small">YT Multi-Device</span>
+  <!-- ──────────────────────────────────── PAGES ── -->
+  <div class="pages" id="pages">
+
+    <!-- ════════ PAGE: HOME ════════ -->
+    <div class="page" id="page-home" data-page="home">
+      <div class="page-scroll">
+        <div class="home-header">
+          <div>
+            <div class="home-greeting" id="home-greeting">Olá 👋</div>
+            <div class="home-sub">O que vamos ouvir?</div>
+          </div>
+          <div class="home-avatar" id="home-avatar">?</div>
+        </div>
+
+        <!-- Quick: what's playing now -->
+        <div id="home-now-playing-card" class="home-now-card hidden" onclick="openPlayer()">
+          <div class="home-now-thumb-wrap">
+            <img id="home-now-thumb" src="" alt="Album" />
+            <div class="home-now-eq"><span></span><span></span><span></span></div>
+          </div>
+          <div class="home-now-info">
+            <div class="home-now-label">Tocando agora</div>
+            <div class="home-now-title" id="home-now-title">—</div>
+            <div class="home-now-artist" id="home-now-artist">—</div>
+          </div>
+          <button class="home-now-play" id="home-now-play">▶</button>
+        </div>
+
+        <!-- Listeners -->
+        <div class="home-section" id="home-listeners-section">
+          <div class="section-header">
+            <span class="section-title">Na sala</span>
+            <span class="section-count" id="home-listener-count">0</span>
+          </div>
+          <div class="listeners-row" id="home-listeners-row"></div>
+        </div>
+
+        <!-- Trending -->
+        <div class="home-section">
+          <div class="section-header">
+            <span class="section-title">Em alta</span>
+          </div>
+          <div id="trending-loading" class="trend-loading">Carregando…</div>
+          <div id="trending-list" class="trending-list hidden"></div>
+        </div>
       </div>
+    </div>
 
-      <!-- This Device -->
-      <section class="sidebar-section">
-        <h3 class="section-title">This Device</h3>
-        <div id="this-device" class="this-device-card"></div>
-      </section>
-
-      <!-- Connected Devices -->
-      <section class="sidebar-section">
-        <h3 class="section-title">Connected Devices</h3>
-        <ul id="device-list" class="device-list" aria-label="Connected devices"></ul>
-      </section>
-    </aside>
-
-    <!-- Main content -->
-    <main class="main">
-
-      <!-- Now Playing -->
-      <section class="now-playing-section">
-        <h2 class="section-heading">Now Playing</h2>
-        <div class="now-playing-card" id="now-playing">
-          <div class="track-art-wrapper">
-            <img id="track-art" src="placeholder.svg" alt="Album art" class="track-art" />
-          </div>
-          <div class="track-meta">
-            <div id="track-title" class="track-title">Nothing playing</div>
-            <div id="track-artist" class="track-artist">—</div>
-            <div id="active-device-label" class="active-device-label"></div>
+    <!-- ════════ PAGE: SEARCH ════════ -->
+    <div class="page hidden" id="page-search" data-page="search">
+      <div class="page-scroll">
+        <div class="search-header">
+          <div class="search-bar-wrap">
+            <svg class="s-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="search-input" type="search" placeholder="Buscar música, artista…" autocomplete="off" autocorrect="off" />
+            <button id="search-clear" class="search-clear hidden">✕</button>
           </div>
         </div>
 
-        <!-- Progress bar -->
-        <div class="progress-row">
-          <span id="current-time" class="time-label">0:00</span>
-          <input id="seek-bar" type="range" class="seek-bar" min="0" max="100" value="0" step="1" aria-label="Seek" />
-          <span id="duration" class="time-label">0:00</span>
+        <!-- Suggestions dropdown -->
+        <div id="search-suggestions" class="suggestions hidden"></div>
+
+        <!-- Recent searches -->
+        <div id="search-recent" class="search-recent">
+          <div class="section-title">Buscas recentes</div>
+          <div id="recent-list" class="recent-list"></div>
         </div>
 
-        <!-- Controls -->
-        <div class="controls-row">
-          <button id="btn-prev" class="ctrl-btn" aria-label="Previous" title="Previous">⏮</button>
-          <button id="btn-play-pause" class="ctrl-btn play" aria-label="Play/Pause" title="Play / Pause">▶</button>
-          <button id="btn-next" class="ctrl-btn" aria-label="Next" title="Next">⏭</button>
-          <div class="volume-row">
-            <span class="volume-icon">🔊</span>
-            <input id="volume-bar" type="range" class="volume-bar" min="0" max="100" value="100" aria-label="Volume" />
-          </div>
-        </div>
-      </section>
+        <!-- Results -->
+        <div id="search-results" class="search-results hidden"></div>
+      </div>
+    </div>
 
-      <!-- Jam Session -->
-      <section class="jam-section">
-        <h2 class="section-heading">Jam Sessions
-          <span class="badge" id="jam-badge" style="display:none"></span>
-        </h2>
+    <!-- ════════ PAGE: DEVICES ════════ -->
+    <div class="page hidden" id="page-devices" data-page="devices">
+      <div class="page-scroll">
+        <div class="page-title-bar">
+          <h2>Dispositivos</h2>
+          <span class="device-count-badge" id="device-count-badge">0</span>
+        </div>
+        <p class="page-hint">Todos nesta sala estão sincronizados em tempo real.</p>
+        <div id="devices-list" class="devices-list"></div>
+      </div>
+    </div>
+
+    <!-- ════════ PAGE: JAMS ════════ -->
+    <div class="page hidden" id="page-jams" data-page="jams">
+      <div class="page-scroll">
+        <div class="page-title-bar">
+          <h2>Jams Privadas</h2>
+        </div>
+        <p class="page-hint">Crie ou entre em uma sala privada com senha para ouvir só com amigos.</p>
 
         <!-- Not in jam -->
         <div id="jam-idle" class="jam-idle">
-          <p class="jam-description">
-            Start a jam to sync playback across multiple devices in real time.
-            Share the code with friends and everyone hears the same thing.
-          </p>
-          <div class="jam-actions">
-            <button id="create-jam-btn" class="btn-primary">Create Jam</button>
-            <div class="join-row">
-              <input id="join-code" type="text" placeholder="Enter jam code" maxlength="6" class="code-input" />
-              <button id="join-jam-btn" class="btn-secondary">Join</button>
+          <div class="jam-option-card" id="jam-create-card">
+            <div class="jam-opt-icon">🎸</div>
+            <div class="jam-opt-text">
+              <div class="jam-opt-title">Criar Jam</div>
+              <div class="jam-opt-desc">Inicie sua sala privada</div>
             </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+
+          <div class="jam-divider">ou</div>
+
+          <div class="join-jam-form">
+            <div class="field">
+              <label>Código da Jam</label>
+              <input id="jam-code-input" type="text" placeholder="ABC123" maxlength="6" autocomplete="off" style="text-transform:uppercase;letter-spacing:.15em;font-size:1.1rem;text-align:center;" />
+            </div>
+            <div class="field" id="jam-pass-field" style="display:none">
+              <label>Senha</label>
+              <input id="jam-password-join" type="password" placeholder="Senha da jam" />
+            </div>
+            <button id="btn-join-jam" class="btn-secondary-lg">Entrar na Jam</button>
           </div>
         </div>
 
         <!-- In jam -->
         <div id="jam-active" class="jam-active hidden">
-          <div class="jam-header-row">
-            <div>
-              <div id="jam-name" class="jam-name"></div>
-              <div class="jam-code-row">
-                Code: <span id="jam-code-display" class="jam-code"></span>
-                <button id="copy-code-btn" class="btn-icon" aria-label="Copy code" title="Copy code">📋</button>
+          <div class="jam-active-card">
+            <div class="jam-active-header">
+              <div class="jam-active-name" id="jam-active-name">—</div>
+              <div class="jam-active-code">
+                Código: <span id="jam-active-code">—</span>
+                <button id="btn-copy-code" class="btn-icon-sm" title="Copiar">📋</button>
               </div>
             </div>
-            <button id="leave-jam-btn" class="btn-danger">Leave Jam</button>
-          </div>
-          <ul id="jam-device-list" class="jam-device-list" aria-label="Jam participants"></ul>
-          <div id="jam-controls" class="jam-controls hidden">
-            <p class="jam-host-label">You are the host — controls affect all participants.</p>
-            <div class="controls-row">
-              <button id="jam-btn-prev" class="ctrl-btn" aria-label="Previous">⏮</button>
-              <button id="jam-btn-play-pause" class="ctrl-btn play" aria-label="Play/Pause">▶</button>
-              <button id="jam-btn-next" class="ctrl-btn" aria-label="Next">⏭</button>
-            </div>
+            <div id="jam-host-badge" class="jam-host-badge hidden">👑 Você é o host</div>
+            <div class="jam-members-title">Membros</div>
+            <ul id="jam-members-list" class="jam-members-list"></ul>
+            <button id="btn-leave-jam" class="btn-danger-sm">Sair da Jam</button>
           </div>
         </div>
-      </section>
+      </div>
+    </div>
 
-    </main>
+    <!-- ════════ PAGE: QUEUE ════════ -->
+    <div class="page hidden" id="page-queue" data-page="queue">
+      <div class="page-scroll">
+        <div class="page-title-bar">
+          <h2>Fila <span class="badge-sm" id="queue-count-badge" style="display:none">0</span></h2>
+        </div>
+        <ul id="queue-list" class="queue-list">
+          <li class="queue-empty">Pesquise músicas para adicionar à fila</li>
+        </ul>
+      </div>
+    </div>
   </div>
 
-  <!-- Toast notifications -->
-  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+  <!-- ──────────────────────────────────── MINI PLAYER ── -->
+  <div id="mini-player" class="mini-player hidden" onclick="openPlayer()">
+    <img id="mini-thumb" src="" alt="" class="mini-thumb" />
+    <div class="mini-info">
+      <div class="mini-title" id="mini-title">—</div>
+      <div class="mini-artist" id="mini-artist">—</div>
+    </div>
+    <button class="mini-ctrl prev" id="mini-prev" onclick="event.stopPropagation();handlePrev()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+    </button>
+    <button class="mini-ctrl play-pause" id="mini-play-pause" onclick="event.stopPropagation();handlePlayPause()">
+      <svg id="mini-icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg id="mini-icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" class="hidden"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+    </button>
+    <button class="mini-ctrl next" id="mini-next" onclick="event.stopPropagation();handleNext()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"/></svg>
+    </button>
+    <div class="mini-progress"><div class="mini-progress-fill" id="mini-progress-fill"></div></div>
+  </div>
 
-  <script src="app.js"></script>
+  <!-- ──────────────────────────────────── BOTTOM NAV ── -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="nav-btn active" data-page="home" onclick="goPage('home')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      <span>Início</span>
+    </button>
+    <button class="nav-btn" data-page="search" onclick="goPage('search')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Buscar</span>
+    </button>
+    <button class="nav-btn" data-page="queue" onclick="goPage('queue')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+      <span>Fila</span>
+    </button>
+    <button class="nav-btn" data-page="devices" onclick="goPage('devices')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg>
+      <span>Sala</span>
+    </button>
+    <button class="nav-btn" data-page="jams" onclick="goPage('jams')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+      <span>Jams</span>
+    </button>
+  </nav>
+
+  <!-- ──────────────────────────────────── FULL PLAYER SHEET ── -->
+  <div id="player-sheet" class="player-sheet hidden">
+    <div class="player-sheet-handle" onclick="closePlayer()"></div>
+    <div class="player-content">
+
+      <!-- Drag to close indicator -->
+      <button class="player-close" onclick="closePlayer()">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+
+      <!-- Art + background -->
+      <div class="player-bg" id="player-bg"></div>
+      <div class="player-art-wrap">
+        <img id="player-art" src="" alt="Album art" class="player-art" />
+        <div class="player-art-placeholder" id="player-art-placeholder">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        </div>
+      </div>
+
+      <!-- Listeners -->
+      <div class="player-listeners" id="player-listeners">
+        <div class="player-listeners-avatars" id="player-listeners-avs"></div>
+        <span id="player-listeners-txt">Só você</span>
+      </div>
+
+      <!-- Track info -->
+      <div class="player-track-info">
+        <div class="player-title" id="player-title">Nada tocando</div>
+        <div class="player-artist" id="player-artist">—</div>
+      </div>
+
+      <!-- Seek -->
+      <div class="player-seek-area">
+        <span id="player-current" class="player-time">0:00</span>
+        <div class="player-seek-track" id="player-seek-track">
+          <div class="player-seek-fill" id="player-seek-fill"></div>
+          <input id="player-seek-bar" type="range" class="seek-hidden" min="0" max="100" value="0" step="1" />
+        </div>
+        <span id="player-duration" class="player-time">0:00</span>
+      </div>
+
+      <!-- Controls -->
+      <div class="player-controls">
+        <button class="p-btn-sm" id="p-prev" onclick="handlePrev()">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button class="p-btn-lg" id="p-play" onclick="handlePlayPause()">
+          <svg id="p-icon-play" width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="p-icon-pause" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" class="hidden"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+        <button class="p-btn-sm" id="p-next" onclick="handleNext()">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"/></svg>
+        </button>
+      </div>
+
+      <!-- Volume -->
+      <div class="player-volume">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5zm9-3.93v1.58c2.01.82 3.5 2.76 3.5 4.85s-1.49 4.03-3.5 4.85v1.58c2.93-.87 5-3.61 5-6.43S16.93 5.94 14 5.07z"/></svg>
+        <input id="player-volume" type="range" class="vol-slider" min="0" max="100" value="100" />
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ──────────────────────────────────── MODALS ── -->
+
+  <!-- Create Jam modal -->
+  <div id="modal-create-jam" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">🎸 Criar Jam Privada</div>
+      <div class="field">
+        <label>Nome da Jam</label>
+        <input id="jam-name-inp" type="text" placeholder="Ex: Viagem de carro" maxlength="40" />
+      </div>
+      <div class="field">
+        <label>Senha (opcional)</label>
+        <input id="jam-pass-inp" type="password" placeholder="Deixe em branco para sem senha" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeModal('modal-create-jam')">Cancelar</button>
+        <button class="btn-primary-sm" id="btn-create-jam-confirm">Criar</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop hidden" id="modal-backdrop" onclick="closeAllModals()"></div>
+
+</div><!-- /app -->
+
+<!-- Toast -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- YouTube IFrame API (hidden) -->
+<script src="https://www.youtube.com/iframe_api"></script>
+<div id="yt-player" style="position:fixed;bottom:-9999px;width:1px;height:1px;opacity:0;pointer-events:none"></div>
+<script src="app.js"></script>
 </body>
 </html>

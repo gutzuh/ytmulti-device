@@ -7,9 +7,6 @@ const { WebSocketServer, WebSocket } = require('ws');
 const { SessionManager } = require('./server/session');
 
 const PORT = process.env.PORT || 3000;
-
-// ─── Express app ─────────────────────────────────────────────────────────────
-
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -18,109 +15,213 @@ const sessions = new SessionManager();
 
 // ── REST API ──────────────────────────────────────────────────────────────────
 
-/** List all connected devices */
-app.get('/api/devices', (_req, res) => {
-  res.json({ devices: sessions.getDevices() });
-});
-
-/** Get current playback state */
-app.get('/api/playback', (_req, res) => {
-  res.json({ playback: sessions.getPlaybackState() });
-});
-
-/** List all active jam sessions */
-app.get('/api/jams', (_req, res) => {
-  res.json({ jams: sessions.getJams() });
-});
-
-/** Get a single jam session by code */
+app.get('/api/devices', (_req, res) => res.json({ devices: sessions.getDevices() }));
+app.get('/api/playback', (_req, res) => res.json({ playback: sessions.getPlaybackState() }));
+app.get('/api/jams', (_req, res) => res.json({ jams: sessions.getJams() }));
 app.get('/api/jams/:code', (req, res) => {
   const jam = sessions.getJamState(req.params.code.toUpperCase());
-  if (!jam) return res.status(404).json({ error: 'Jam session not found' });
+  if (!jam) return res.status(404).json({ error: 'Jam not found' });
   res.json({ jam });
+});
+
+const INVIDIOUS = [
+  'https://inv.nadeko.net',
+  'https://vid.puffyan.us',
+  'https://invidious.fdn.fr',
+  'https://y.com.sb',
+  'https://invidious.nerdvpn.de',
+];
+
+async function invidiousFetch(path, timeout = 6000) {
+  let lastErr;
+  for (const base of INVIDIOUS) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeout);
+      const res = await fetch(`${base}${path}`, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) { lastErr = new Error(res.status); continue; }
+      return await res.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+
+/** Search YouTube */
+app.get('/api/search', async (req, res) => {
+  const { q, type = 'video', page = 1 } = req.query;
+  if (!q) return res.status(400).json({ error: 'Missing q' });
+  try {
+    const data = await invidiousFetch(`/api/v1/search?q=${encodeURIComponent(q)}&type=${type}&page=${page}`);
+    const results = data
+      .filter(v => v.type === 'video')
+      .slice(0, 12)
+      .map(v => ({
+        videoId: v.videoId,
+        title: v.title,
+        author: v.author,
+        thumbnail: v.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+        duration: v.lengthSeconds || 0,
+      }));
+    res.json({ results });
+  } catch (err) {
+    res.status(502).json({ error: 'Search unavailable' });
+  }
+});
+
+/** Search suggestions (autocomplete) */
+app.get('/api/suggest', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.json({ suggestions: [] });
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch(
+      `https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&q=${encodeURIComponent(q)}&callback=f`,
+      { signal: ctrl.signal }
+    );
+    clearTimeout(t);
+    const text = await r.text();
+    // Response is JSONP: f([...]) — extract the array
+    const json = JSON.parse(text.replace(/^f\(/, '').replace(/\)$/, ''));
+    const suggestions = (json[1] || []).slice(0, 8).map(s => s[0] || s);
+    res.json({ suggestions });
+  } catch {
+    // Fallback — return empty
+    res.json({ suggestions: [] });
+  }
+});
+
+/** Trending music */
+app.get('/api/trending', async (req, res) => {
+  try {
+    const data = await invidiousFetch('/api/v1/trending?type=music&region=BR');
+    const results = data.slice(0, 10).map(v => ({
+      videoId: v.videoId,
+      title: v.title,
+      author: v.author,
+      thumbnail: v.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+      duration: v.lengthSeconds || 0,
+    }));
+    res.json({ results });
+  } catch {
+    res.status(502).json({ error: 'Trending unavailable' });
+  }
 });
 
 // ─── HTTP server ──────────────────────────────────────────────────────────────
 
 const server = http.createServer(app);
-
-// ─── WebSocket server ─────────────────────────────────────────────────────────
-
 const wss = new WebSocketServer({ server });
 
-/**
- * Broadcast a message to a list of device ids.
- * @param {string[]} deviceIds
- * @param {object}   payload
- */
-function broadcast(deviceIds, payload) {
+// ── Shared room state ─────────────────────────────────────────────────────────
+
+const roomState = {
+  videoId: null,
+  isPlaying: false,
+  currentTime: 0,
+  track: null,
+  updatedAt: Date.now(),
+};
+
+// Private jams: Map<code, { name, password, hostId, deviceIds[], isPlaying, videoId, track, currentTime, updatedAt }>
+const privateJams = new Map();
+
+function makeJamCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function getEstimatedTime(st) {
+  if (st.isPlaying) {
+    return st.currentTime + (Date.now() - st.updatedAt) / 1000;
+  }
+  return st.currentTime;
+}
+
+function getRoomPayload() {
+  return {
+    videoId: roomState.videoId,
+    isPlaying: roomState.isPlaying,
+    currentTime: getEstimatedTime(roomState),
+    track: roomState.track,
+  };
+}
+
+// ── Broadcast helpers ──────────────────────────────────────────────────────────
+
+function broadcast(ids, payload) {
   const msg = JSON.stringify(payload);
-  for (const id of deviceIds) {
+  for (const id of ids) {
     const ws = sessions.getWs(id);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(msg);
-    }
+    if (ws?.readyState === WebSocket.OPEN) ws.send(msg);
   }
 }
 
-/**
- * Broadcast the current device list to every connected device.
- */
+function broadcastAll(payload) {
+  broadcast(sessions.getDevices().map(d => d.id), payload);
+}
+
 function broadcastDevices() {
-  const devices = sessions.getDevices();
-  const ids = devices.map(d => d.id);
-  broadcast(ids, { type: 'devices', devices });
+  // Include private jam info in each device record for the "Devices" page
+  const devices = sessions.getDevices().map(d => ({
+    ...d,
+    inJam: d._jamCode ? privateJams.has(d._jamCode) : false,
+    jamName: d._jamCode ? (privateJams.get(d._jamCode)?.name || null) : null,
+  }));
+  broadcastAll({ type: 'devices', devices });
 }
 
-/**
- * Broadcast the current playback state to every connected device.
- */
-function broadcastPlayback() {
-  const devices = sessions.getDevices();
-  const ids = devices.map(d => d.id);
-  broadcast(ids, { type: 'playback_state', state: sessions.getPlaybackState() });
+function broadcastRoom() {
+  broadcastAll({ type: 'room_state', room: getRoomPayload() });
 }
 
-/**
- * Broadcast the current jam state to every participant of a jam.
- * @param {string} jamCode
- */
-function broadcastJam(jamCode) {
-  const jam = sessions.getJamState(jamCode);
+function broadcastJam(code) {
+  const jam = privateJams.get(code);
   if (!jam) return;
-  broadcast(jam.deviceIds, { type: 'jam_state', jam });
+  broadcast(jam.deviceIds, {
+    type: 'jam_state',
+    jam: {
+      code,
+      name: jam.name,
+      hasPassword: !!jam.password,
+      hostId: jam.hostId,
+      deviceIds: jam.deviceIds,
+      videoId: jam.videoId,
+      isPlaying: jam.isPlaying,
+      currentTime: getEstimatedTime(jam),
+      track: jam.track,
+    },
+  });
 }
+
+// ── WebSocket ──────────────────────────────────────────────────────────────────
 
 wss.on('connection', (ws) => {
   let deviceId = null;
+  let jamCode = null;   // private jam the device is in
 
   ws.on('message', (raw) => {
     let msg;
-    try {
-      msg = JSON.parse(raw.toString());
-    } catch {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
-      return;
-    }
+    try { msg = JSON.parse(raw.toString()); }
+    catch { ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' })); return; }
 
     switch (msg.type) {
-      // ── Registration ─────────────────────────────────────────────────────
+
+      // ── Register ───────────────────────────────────────────────────────────
       case 'register': {
-        if (deviceId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Already registered' }));
-          return;
-        }
+        if (deviceId) return;
         deviceId = sessions.registerDevice(msg.deviceName, msg.deviceType, ws);
         ws.send(JSON.stringify({
           type: 'registered',
           deviceId,
+          room: getRoomPayload(),
           playback: sessions.getPlaybackState(),
         }));
         broadcastDevices();
         break;
       }
 
-      // ── Heartbeat ────────────────────────────────────────────────────────
+      // ── Heartbeat ──────────────────────────────────────────────────────────
       case 'heartbeat': {
         if (!deviceId) return;
         sessions.heartbeat(deviceId);
@@ -128,192 +229,221 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      // ── Playback transfer ────────────────────────────────────────────────
-      case 'transfer_to': {
+      // ── Load video (public room + optional jam sync) ───────────────────────
+      case 'load_video': {
         if (!deviceId) return;
-        const targetId = msg.deviceId;
-        if (!targetId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'deviceId required' }));
+        const { videoId, track } = msg;
+        if (!videoId) return;
+
+        if (jamCode) {
+          // Load in private jam
+          const jam = privateJams.get(jamCode);
+          if (jam) {
+            jam.videoId = videoId;
+            jam.isPlaying = true;
+            jam.currentTime = 0;
+            jam.updatedAt = Date.now();
+            if (track) jam.track = track;
+            broadcastJam(jamCode);
+          }
+        } else {
+          // Load in public room
+          roomState.videoId = videoId;
+          roomState.isPlaying = true;
+          roomState.currentTime = 0;
+          roomState.updatedAt = Date.now();
+          if (track) { roomState.track = track; sessions.updateTrack(track); }
+          sessions.applyControl('play', null);
+          broadcastRoom();
+          broadcastDevices();
+        }
+        break;
+      }
+
+      // ── Playback control ───────────────────────────────────────────────────
+      case 'control': {
+        if (!deviceId) return;
+        const { action, value } = msg;
+        const allowed = ['play', 'pause', 'seek', 'volume'];
+        if (!allowed.includes(action)) return;
+
+        const target = jamCode ? privateJams.get(jamCode) : roomState;
+        if (!target) return;
+
+        if (action === 'play') {
+          target.currentTime = getEstimatedTime(target);
+          target.isPlaying = true;
+          target.updatedAt = Date.now();
+        } else if (action === 'pause') {
+          target.currentTime = getEstimatedTime(target);
+          target.isPlaying = false;
+          target.updatedAt = Date.now();
+        } else if (action === 'seek') {
+          target.currentTime = value;
+          target.updatedAt = Date.now();
+        }
+
+        if (jamCode) {
+          broadcastJam(jamCode);
+        } else {
+          sessions.applyControl(action, value);
+          broadcastRoom();
+          if (action === 'volume') broadcastAll({ type: 'control', action: 'volume', value });
+        }
+        break;
+      }
+
+      // ── Track metadata update ──────────────────────────────────────────────
+      case 'update_track': {
+        if (!deviceId) return;
+        if (jamCode) {
+          const jam = privateJams.get(jamCode);
+          if (jam) { jam.track = msg.track; broadcastJam(jamCode); }
+        } else {
+          roomState.track = msg.track;
+          sessions.updateTrack(msg.track);
+          broadcastAll({ type: 'track_updated', track: msg.track });
+        }
+        break;
+      }
+
+      // ── Queue next/prev (broadcast to all in same room/jam) ───────────────
+      case 'queue_next':
+      case 'queue_prev': {
+        if (!deviceId) return;
+        if (jamCode) broadcastJam(jamCode);   // participants handle locally
+        else broadcastAll({ type: msg.type });
+        break;
+      }
+
+      // ── Create private jam ─────────────────────────────────────────────────
+      case 'create_jam': {
+        if (!deviceId) return;
+        if (jamCode) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Already in a jam' }));
           return;
         }
-        const ok = sessions.transferTo(targetId);
-        if (!ok) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Target device not found' }));
-          return;
-        }
-        // Tell the new active device to start playing.
-        broadcast([targetId], { type: 'become_active', playback: sessions.getPlaybackState() });
-        broadcastPlayback();
+        const code = makeJamCode();
+        const jam = {
+          name: msg.jamName || 'Jam Session',
+          password: msg.password || null,
+          hostId: deviceId,
+          deviceIds: [deviceId],
+          videoId: roomState.videoId,
+          isPlaying: false,
+          currentTime: getEstimatedTime(roomState),
+          updatedAt: Date.now(),
+          track: roomState.track,
+        };
+        privateJams.set(code, jam);
+        jamCode = code;
+        const dev = sessions.getDevice(deviceId);
+        if (dev) dev._jamCode = code;
+        ws.send(JSON.stringify({
+          type: 'jam_created',
+          jam: {
+            code,
+            name: jam.name,
+            hasPassword: !!jam.password,
+            hostId: jam.hostId,
+            deviceIds: jam.deviceIds,
+            videoId: jam.videoId,
+            isPlaying: jam.isPlaying,
+            currentTime: jam.currentTime,
+            track: jam.track,
+          },
+        }));
         broadcastDevices();
         break;
       }
 
-      // ── Playback control ─────────────────────────────────────────────────
-      case 'control': {
-        if (!deviceId) return;
-        const { action, value } = msg;
-        const allowedActions = ['play', 'pause', 'next', 'prev', 'seek', 'volume'];
-        if (!allowedActions.includes(action)) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Unknown action' }));
-          return;
-        }
-        sessions.applyControl(action, value);
-
-        const state = sessions.getPlaybackState();
-        const { activeDeviceId } = state;
-
-        // Forward control to the active device so it can act on it.
-        if (activeDeviceId) {
-          broadcast([activeDeviceId], { type: 'control', action, value });
-        }
-
-        // Also propagate to jam participants if active device is in a jam.
-        const activeDev = sessions.getDevice(activeDeviceId);
-        if (activeDev && activeDev.jamCode) {
-          sessions.applyJamControl(activeDev.jamCode, action, value);
-          broadcastJam(activeDev.jamCode);
-        }
-
-        broadcastPlayback();
-        break;
-      }
-
-      // ── Track update (active device reports what's playing) ──────────────
-      case 'update_track': {
-        if (!deviceId) return;
-        const state = sessions.getPlaybackState();
-        // Only the active device (or any jam host) may update the track.
-        if (deviceId === state.activeDeviceId) {
-          sessions.updateTrack(msg.track);
-          broadcastPlayback();
-        }
-        // Also update jam track if sender is a jam host.
-        const dev = sessions.getDevice(deviceId);
-        if (dev && dev.jamCode) {
-          const jam = sessions.getJamState(dev.jamCode);
-          if (jam && jam.hostDeviceId === deviceId) {
-            sessions.updateJamTrack(dev.jamCode, msg.track);
-            broadcastJam(dev.jamCode);
-          }
-        }
-        break;
-      }
-
-      // ── Jam: create ──────────────────────────────────────────────────────
-      case 'create_jam': {
-        if (!deviceId) return;
-        try {
-          const { jamCode, jam } = sessions.createJam(deviceId, msg.jamName);
-          ws.send(JSON.stringify({
-            type: 'jam_created',
-            jamCode,
-            jam: sessions.getJamState(jamCode),
-          }));
-          broadcastDevices();
-        } catch (err) {
-          ws.send(JSON.stringify({ type: 'error', message: err.message }));
-        }
-        break;
-      }
-
-      // ── Jam: join ────────────────────────────────────────────────────────
+      // ── Join private jam ───────────────────────────────────────────────────
       case 'join_jam': {
         if (!deviceId) return;
-        const code = (msg.jamCode || '').toUpperCase();
-        if (!code) {
-          ws.send(JSON.stringify({ type: 'error', message: 'jamCode required' }));
+        const code = (msg.code || '').toUpperCase().trim();
+        const jam = privateJams.get(code);
+        if (!jam) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Jam not found' }));
           return;
         }
-        try {
-          sessions.joinJam(deviceId, code);
-          const jam = sessions.getJamState(code);
-          ws.send(JSON.stringify({ type: 'jam_joined', jam }));
-          broadcastJam(code);
-          broadcastDevices();
-        } catch (err) {
-          ws.send(JSON.stringify({ type: 'error', message: err.message }));
+        if (jam.password && jam.password !== msg.password) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Wrong password' }));
+          return;
         }
-        break;
-      }
-
-      // ── Jam: leave ───────────────────────────────────────────────────────
-      case 'leave_jam': {
-        if (!deviceId) return;
-        const leftCode = sessions.leaveJam(deviceId);
-        ws.send(JSON.stringify({ type: 'jam_left' }));
-        if (leftCode) {
-          broadcastJam(leftCode);
-          broadcastDevices();
-        }
-        break;
-      }
-
-      // ── Jam: control (from any participant) ──────────────────────────────
-      case 'jam_control': {
-        if (!deviceId) return;
+        if (!jam.deviceIds.includes(deviceId)) jam.deviceIds.push(deviceId);
+        jamCode = code;
         const dev = sessions.getDevice(deviceId);
-        if (!dev || !dev.jamCode) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Not in a jam session' }));
-          return;
+        if (dev) dev._jamCode = code;
+        ws.send(JSON.stringify({
+          type: 'jam_joined',
+          jam: {
+            code,
+            name: jam.name,
+            hasPassword: !!jam.password,
+            hostId: jam.hostId,
+            deviceIds: jam.deviceIds,
+            videoId: jam.videoId,
+            isPlaying: jam.isPlaying,
+            currentTime: getEstimatedTime(jam),
+            track: jam.track,
+          },
+        }));
+        broadcastJam(code);
+        broadcastDevices();
+        break;
+      }
+
+      // ── Leave jam ──────────────────────────────────────────────────────────
+      case 'leave_jam': {
+        if (!deviceId || !jamCode) return;
+        const jam = privateJams.get(jamCode);
+        if (jam) {
+          jam.deviceIds = jam.deviceIds.filter(id => id !== deviceId);
+          if (jam.deviceIds.length === 0) privateJams.delete(jamCode);
+          else broadcastJam(jamCode);
         }
-        const jam = sessions.getJamState(dev.jamCode);
-        if (!jam) return;
-        // Only the host may control the jam.
-        if (jam.hostDeviceId !== deviceId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Only the host may control the jam' }));
-          return;
-        }
-        const allowedJamActions = ['play', 'pause', 'seek'];
-        if (!allowedJamActions.includes(msg.action)) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Unknown jam action' }));
-          return;
-        }
-        sessions.applyJamControl(dev.jamCode, msg.action, msg.value);
-        broadcastJam(dev.jamCode);
-        // Forward the control command to all jam participants.
-        broadcast(jam.deviceIds, { type: 'control', action: msg.action, value: msg.value });
+        const dev = sessions.getDevice(deviceId);
+        if (dev) delete dev._jamCode;
+        jamCode = null;
+        ws.send(JSON.stringify({ type: 'jam_left' }));
+        broadcastDevices();
         break;
       }
 
       default:
-        ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${msg.type}` }));
+        ws.send(JSON.stringify({ type: 'error', message: `Unknown: ${msg.type}` }));
     }
   });
 
   ws.on('close', () => {
     if (!deviceId) return;
-    const dev = sessions.getDevice(deviceId);
-    const jamCode = dev ? dev.jamCode : null;
+    if (jamCode) {
+      const jam = privateJams.get(jamCode);
+      if (jam) {
+        jam.deviceIds = jam.deviceIds.filter(id => id !== deviceId);
+        if (jam.deviceIds.length === 0) privateJams.delete(jamCode);
+        else broadcastJam(jamCode);
+      }
+    }
     sessions.removeDevice(deviceId);
     broadcastDevices();
-    broadcastPlayback();
-    if (jamCode) broadcastJam(jamCode);
   });
 
-  ws.on('error', (err) => {
-    console.error('WebSocket error:', err.message);
-  });
+  ws.on('error', (err) => console.error('WS error:', err.message));
 });
 
-// ─── Heartbeat pruning ────────────────────────────────────────────────────────
+// ── Heartbeat pruning ──────────────────────────────────────────────────────────
 
 const pruneInterval = setInterval(() => {
-  const removed = sessions.pruneStale();
-  if (removed.length > 0) {
-    broadcastDevices();
-    broadcastPlayback();
-  }
+  sessions.pruneStale();
+  broadcastDevices();
 }, 30_000);
 
-// ─── Start ────────────────────────────────────────────────────────────────────
+// ── Start ──────────────────────────────────────────────────────────────────────
 
 if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`ytmulti-device server running on http://localhost:${PORT}`);
-  });
+  server.listen(PORT, () => console.log(`ytmulti-device server running on http://localhost:${PORT}`));
 }
 
 module.exports = { app, server, wss, sessions, broadcast };
-
-// Clean up interval when server closes (important for tests).
 server.on('close', () => clearInterval(pruneInterval));
